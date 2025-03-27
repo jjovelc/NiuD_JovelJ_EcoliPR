@@ -1,4 +1,4 @@
-# 1.	GWAS analysis to identify E. coli genes or SNPS associated with phage resistance
+# 	GWAS analysis to identify E. coli genes or SNPS associated with phage resistance
 
 The analytical pipeline is described in [Fig. 1]("data/Fig.1_workflow.png")
 
