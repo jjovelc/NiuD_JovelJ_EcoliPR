@@ -105,7 +105,7 @@ Please ensure the following software is installed and available in your environm
 - The pipeline assumes samples are phenotyped for resistance/sensitivity to a given phage.  
 
 
-The analytical pipeline is described in [Fig. 1]("data/Fig.1_workflow.png")
+The analytical pipeline is described in [Fig. 1]([Fig. 1](data/Fig.1_workflow.png))
 
 Figure 1. Workflow used for identification of SNPs in E. coli genomic libraries and GWAS analysis.
 
