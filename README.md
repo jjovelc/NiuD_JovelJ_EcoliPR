@@ -1,5 +1,3 @@
-# 	GWAS analysis to identify E. coli genes or SNPS associated with phage resistance
-
 # SNP Discovery and GWAS Pipeline for Phage Resistance in *E. coli*
 
 This repository documents the variant calling and genome-wide association study (GWAS) pipeline used to identify significant non-synonymous SNPs (nsSNPs) associated with phage resistance in 111 cultured *Escherichia coli* isolates.
