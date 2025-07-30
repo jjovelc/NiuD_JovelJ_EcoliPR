@@ -1,5 +1,8 @@
 #!/usr/bin/bash
 
+eval "$(conda shell.bash hook)"
+conda activate phage
+
 # Run FreeBayes in parallel
 # The genome is divided into 100,000-base regions for parallel processing.
 # Using 48 threads for high-performance processing.

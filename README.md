@@ -31,6 +31,7 @@ A total of 111 *E. coli* strains were sequenced, aligned to a reference genome, 
 ### 3. Variant Calling
 
 - **Tool**: [FreeBayes](https://github.com/freebayes/freebayes)  
+- **Script**: `
 - **Description**: Multi-sample variant calling was performed on the BAM files.  
 - **Output**: `variants.vcf`  
 
