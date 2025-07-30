@@ -15,12 +15,14 @@ A total of 111 *E. coli* strains were sequenced, aligned to a reference genome, 
 - **Samples**: 111 cultured *E. coli* strains  
 - **Reference Genome**: `NZ_HG941718.1` (used for both alignment and variant calling)  
 - **Annotation File**: GFF file generated with Prokka from `NZ_HG941718.1`  
+- **phage_traits.tsv**: A matrix with one E.coli strain per row and a Phage per column. Data is a matrix with 0 or 1 values depending if a bacteria was or not susceptible to each phage.  
 
 ---
 
 ### 2. Read Alignment
 
 - **Tool**: [BWA](http://bio-bwa.sourceforge.net/)  
+- **Script**: `align_against_assemblies.sh` 
 - **Description**: Paired-end reads were aligned to the reference genome.  
 - **Output**: Sorted BAM files  
 
