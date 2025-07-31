@@ -1,6 +1,7 @@
 library(GWAS.BAYES)
 
 # Set working directory
+
 setwd('/Users/juanjovel/Library/CloudStorage/OneDrive-UniversityofCalgary/jj/UofC/data_analysis/dongyanNiu/BICOSS')
 
 # Define the input file
@@ -38,188 +39,99 @@ write.table(kinship_matrix, file = "kinship_matrix.txt",
             sep = "\t", quote = FALSE, 
             row.names = TRUE, col.names = TRUE)
 
-# Enhanced data validation function
-validate_bicoss_inputs <- function(Y, SNPs, kinship) {
-  cat("=== Input Validation ===\n")
-  
-  # Check Y
-  cat("Y - Length:", length(Y), "Type:", class(Y), "\n")
-  cat("Y - Range:", range(Y, na.rm = TRUE), "\n")
-  cat("Y - NA count:", sum(is.na(Y)), "\n")
-  cat("Y - Variance:", var(Y, na.rm = TRUE), "\n")
-  
-  # Check SNPs
-  cat("SNPs - Dimensions:", dim(SNPs), "Type:", class(SNPs), "\n")
-  cat("SNPs - Range:", range(SNPs, na.rm = TRUE), "\n")
-  cat("SNPs - NA count:", sum(is.na(SNPs)), "\n")
-  
-  # Check kinship
-  cat("Kinship - Dimensions:", dim(kinship), "Type:", class(kinship), "\n")
-  cat("Kinship - Range:", range(kinship, na.rm = TRUE), "\n")
-  cat("Kinship - NA count:", sum(is.na(kinship)), "\n")
-  cat("Kinship - Is symmetric:", isSymmetric(kinship), "\n")
-  
-  # Check dimension compatibility
-  cat("Dimension checks:\n")
-  cat("  Y length == SNPs rows:", length(Y) == nrow(SNPs), "\n")
-  cat("  Y length == kinship rows:", length(Y) == nrow(kinship), "\n")
-  cat("  Y length == kinship cols:", length(Y) == ncol(kinship), "\n")
-  
-  return(TRUE)
-}
 
-# Main loop with enhanced error handling
-multivariate_results <- list()
-
+# Now the loop to process each phage
+# Main loop with proper SNP filtering
 for (trait in colnames(traits_data)) {
-  cat("\n", paste(rep("=", 60), collapse=""), "\n")
-  cat("Processing trait:", trait, "\n")
-  cat(paste(rep("=", 60), collapse=""), "\n")
+  cat("\n\nProcessing trait:", trait, "\n")
+  
+  # Prepare phenotype data
+  Y <- as.numeric(as.character(traits_data[[trait]]))
+  valid_samples <- !is.na(Y)
+  Y <- Y[valid_samples]
+  
+  # Check if we have enough valid samples
+  if (sum(valid_samples) < 10) {
+    cat("Warning: Too few valid samples for trait", trait, ". Skipping.\n")
+    next
+  }
+  
+  Y <- scale(Y, center = TRUE, scale = FALSE)
+  
+  # Print Y diagnostics
+  cat("Y summary:", "\n")
+  print(summary(Y))
+  
+  # Prepare genotype data
+  geno_matrix_valid <- geno_matrix[valid_samples, ]
+  
+  # Calculate SNP variance
+  snp_var <- apply(geno_matrix_valid, 2, var)
+  valid_snps <- !is.na(snp_var) & snp_var > 0
+  cat("Number of valid SNPs:", sum(valid_snps), "\n")
+  
+  # Keep track of original SNP names/positions before subsetting
+  snp_names <- colnames(geno_matrix_valid)[valid_snps]
+  
+  # Now subset and scale the genotype matrix
+  geno_matrix_valid <- geno_matrix_valid[, valid_snps]
+  geno_matrix_valid <- scale(geno_matrix_valid, center = TRUE, scale = TRUE)
+  
+  # Prepare kinship matrix
+  kinship_matrix_valid <- kinship_matrix[valid_samples, valid_samples]
   
   tryCatch({
-    # Prepare phenotype data
-    Y <- as.numeric(as.character(traits_data[[trait]]))
-    valid_samples <- !is.na(Y)
-    Y <- Y[valid_samples]
-    
-    # Check if we have enough valid samples
-    if (sum(valid_samples) < 10) {
-      cat("Warning: Too few valid samples for trait", trait, ". Skipping.\n")
-      next
-    }
-    
-    # Center Y but don't scale to unit variance yet
-    Y <- as.numeric(scale(Y, center = TRUE, scale = FALSE))
-    
-    # Prepare genotype data
-    geno_matrix_valid <- geno_matrix[valid_samples, , drop = FALSE]
-    
-    # More stringent SNP filtering
-    cat("Filtering SNPs...\n")
-    snp_var <- apply(geno_matrix_valid, 2, function(x) {
-      if (all(is.na(x))) return(0)
-      return(var(x, na.rm = TRUE))
-    })
-    
-    # Remove SNPs with zero variance or too many missing values
-    missing_prop <- apply(geno_matrix_valid, 2, function(x) sum(is.na(x)) / length(x))
-    valid_snps <- !is.na(snp_var) & snp_var > 1e-6 & missing_prop < 0.1
-    
-    cat("SNPs before filtering:", ncol(geno_matrix_valid), "\n")
-    cat("SNPs after variance filtering:", sum(valid_snps), "\n")
-    
-    if (sum(valid_snps) < 10) {
-      cat("Warning: Too few valid SNPs for trait", trait, ". Skipping.\n")
-      next
-    }
-    
-    # Keep track of original SNP names
-    snp_names <- colnames(geno_matrix_valid)[valid_snps]
-    
-    # Subset and properly scale genotype matrix
-    geno_matrix_valid <- geno_matrix_valid[, valid_snps, drop = FALSE]
-    
-    # Handle any remaining NAs
-    if (any(is.na(geno_matrix_valid))) {
-      cat("Warning: NAs found in genotype matrix. Imputing with column means.\n")
-      for (j in 1:ncol(geno_matrix_valid)) {
-        col_mean <- mean(geno_matrix_valid[, j], na.rm = TRUE)
-        geno_matrix_valid[is.na(geno_matrix_valid[, j]), j] <- col_mean
-      }
-    }
-    
-    # Scale genotype matrix
-    geno_matrix_valid <- scale(geno_matrix_valid, center = TRUE, scale = TRUE)
-    
-    # Prepare kinship matrix
-    kinship_matrix_valid <- kinship_matrix[valid_samples, valid_samples, drop = FALSE]
-    
-    # Ensure kinship matrix is positive definite
-    eigen_vals <- eigen(kinship_matrix_valid, symmetric = TRUE, only.values = TRUE)$values
-    min_eigen <- min(eigen_vals)
-    if (min_eigen <= 0) {
-      cat("Warning: Kinship matrix not positive definite. Adding regularization.\n")
-      diag(kinship_matrix_valid) <- diag(kinship_matrix_valid) + abs(min_eigen) + 1e-6
-    }
-    
-    # Validate inputs before BICOSS call
-    validate_bicoss_inputs(Y, geno_matrix_valid, kinship_matrix_valid)
-    
-    # Convert to matrices and ensure proper types
-    Y_vec <- as.numeric(Y)
-    SNPs_mat <- as.matrix(geno_matrix_valid)
-    kinship_mat <- as.matrix(kinship_matrix_valid)
-    
-    # Ensure no infinite values
-    if (any(!is.finite(Y_vec))) {
-      cat("Error: Non-finite values in Y. Skipping trait.\n")
-      next
-    }
-    if (any(!is.finite(SNPs_mat))) {
-      cat("Error: Non-finite values in SNPs matrix. Skipping trait.\n")
-      next
-    }
-    if (any(!is.finite(kinship_mat))) {
-      cat("Error: Non-finite values in kinship matrix. Skipping trait.\n")
-      next
-    }
-    
-    cat("Calling BICOSS function...\n")
     set.seed(123)
     
-    # Try with more conservative parameters first
-    BICOSS_result <- BICOSS(
-      Y = Y_vec,
-      SNPs = SNPs_mat,
-      kinship = kinship_mat,
-      FDR_Nominal = 0.1,  # Less stringent initially
-      P3D = TRUE,         # Try with P3D = TRUE first
-      maxiterations = 200,  # Fewer iterations initially
-      runs_til_stop = 20    # Stop earlier
+    BICOSS_Exact <- BICOSS(
+      Y = as.numeric(Y),
+      SNPs = as.matrix(geno_matrix_valid),
+      kinship = as.matrix(kinship_matrix_valid),
+      FDR_Nominal = 0.05,
+      P3D = FALSE,
+      maxiterations = 400,
+      runs_til_stop = 40
     )
     
-    cat("BICOSS completed successfully!\n")
-    cat("Best model length:", length(BICOSS_result$best_model), "\n")
+    cat("BICOSS run completed\n")
+    cat("best_model length:", length(BICOSS_Exact$best_model), "\n")
+    cat("best_model content:", paste(BICOSS_Exact$best_model, collapse=", "), "\n")
     
-    # Process results
-    if (!is.null(BICOSS_result$best_model) && 
-        length(BICOSS_result$best_model) > 0 && 
-        !all(is.na(BICOSS_result$best_model))) {
+    # Check if best_model contains valid SNP indices
+    if (!is.null(BICOSS_Exact$best_model) && 
+        length(BICOSS_Exact$best_model) > 0 && 
+        !is.character(BICOSS_Exact$best_model)) {
       
-      cat("Found significant SNPs:", paste(BICOSS_result$best_model, collapse=", "), "\n")
-      
-      # Calculate effects for significant SNPs
-      if (length(BICOSS_result$best_model) == 1) {
-        snp_data <- SNPs_mat[, BICOSS_result$best_model, drop=FALSE]
-        cor_test <- cor.test(as.numeric(snp_data), Y_vec, method="pearson")
+      # Handle single SNP case
+      if (length(BICOSS_Exact$best_model) == 1) {
+        snp_data <- geno_matrix_valid[, BICOSS_Exact$best_model, drop=FALSE]
+        cor_test <- cor.test(snp_data, Y, method="pearson")
         
         significant_snps <- data.frame(
           Trait = trait,
-          SNP_Index = BICOSS_result$best_model,
-          SNP_ID = snp_names[BICOSS_result$best_model],
+          SNP_Index = BICOSS_Exact$best_model,
+          SNP_ID = snp_names[BICOSS_Exact$best_model],
           Effect = cor_test$estimate,
-          P_Value = cor_test$p.value,
-          stringsAsFactors = FALSE
+          P_Value = cor_test$p.value
         )
       } else {
-        effects <- numeric(length(BICOSS_result$best_model))
-        pvalues <- numeric(length(BICOSS_result$best_model))
+        # Handle multiple SNPs case
+        effects <- numeric(length(BICOSS_Exact$best_model))
+        pvalues <- numeric(length(BICOSS_Exact$best_model))
         
-        for(i in seq_along(BICOSS_result$best_model)) {
-          snp_idx <- BICOSS_result$best_model[i]
-          snp_data <- SNPs_mat[, snp_idx, drop=FALSE]
-          cor_test <- cor.test(as.numeric(snp_data), Y_vec, method="pearson")
+        for(i in seq_along(BICOSS_Exact$best_model)) {
+          snp_data <- geno_matrix_valid[, BICOSS_Exact$best_model[i], drop=FALSE]
+          cor_test <- cor.test(snp_data, Y, method="pearson")
           effects[i] <- cor_test$estimate
           pvalues[i] <- cor_test$p.value
         }
         
         significant_snps <- data.frame(
           Trait = trait,
-          SNP_Index = BICOSS_result$best_model,
-          SNP_ID = snp_names[BICOSS_result$best_model],
+          SNP_Index = BICOSS_Exact$best_model,
+          SNP_ID = snp_names[BICOSS_Exact$best_model],
           Effect = effects,
-          P_Value = pvalues,
-          stringsAsFactors = FALSE
+          P_Value = pvalues
         )
       }
       
@@ -228,82 +140,121 @@ for (trait in colnames(traits_data)) {
       write.table(significant_snps, file = outfile, 
                   sep = "\t", quote = FALSE, row.names = FALSE)
       
-      cat("Results saved to:", outfile, "\n")
+      cat("\nResults for trait:", trait, "\n")
+      cat("Number of significant SNPs found:", nrow(significant_snps), "\n")
       print(significant_snps)
-      
-      # Store in multivariate results
-      multivariate_results[[trait]] <- significant_snps
-      
     } else {
-      cat("No significant SNPs found for trait:", trait, "\n")
-      
-      # Create empty results file
+      cat("\nNo significant SNPs found for trait:", trait, "\n")
       outfile <- paste0("BICOSS_", trait, "_significant_SNPs.txt")
-      empty_df <- data.frame(
-        Trait = character(0),
-        SNP_Index = numeric(0),
-        SNP_ID = character(0),
-        Effect = numeric(0),
-        P_Value = numeric(0)
-      )
-      write.table(empty_df, file = outfile, 
+      write.table(data.frame(), file = outfile, 
                   sep = "\t", quote = FALSE, row.names = FALSE)
     }
-    
   }, error = function(e) {
-    cat("\n!!! ERROR processing trait:", trait, "!!!\n")
+    cat("\nError processing trait:", trait, "\n")
     cat("Error message:", conditionMessage(e), "\n")
-    cat("Error class:", class(e), "\n")
+    cat("Error trace:\n")
+    print(e)
     
-    # Print more detailed error information
-    if (exists("traceback")) {
-      cat("Traceback:\n")
-      print(traceback())
-    }
-    
-    # Create empty results file for failed trait
     outfile <- paste0("BICOSS_", trait, "_significant_SNPs.txt")
-    empty_df <- data.frame(
-      Trait = character(0),
-      SNP_Index = numeric(0),
-      SNP_ID = character(0),
-      Effect = numeric(0),
-      P_Value = numeric(0)
-    )
-    write.table(empty_df, file = outfile, 
+    write.table(data.frame(), file = outfile, 
                 sep = "\t", quote = FALSE, row.names = FALSE)
   })
 }
 
-# Save combined results
-if (length(multivariate_results) > 0) {
-  cat("\n", paste(rep("=", 50), collapse=""), "\n")
-  cat("SAVING COMBINED RESULTS\n")
-  cat(paste(rep("=", 50), collapse=""), "\n")
-  
-  # Combine all results
-  combined_results <- do.call(rbind, multivariate_results)
-  write.table(combined_results, file = "BICOSS_all_traits_significant_SNPs.txt", 
-              sep = "\t", quote = FALSE, row.names = FALSE)
-  
-  cat("Combined results saved to: BICOSS_all_traits_significant_SNPs.txt\n")
-  cat("Total traits with results:", length(multivariate_results), "\n")
-  cat("Total significant SNPs:", nrow(combined_results), "\n")
-} else {
-  cat("\nNo successful results to combine.\n")
+
+##### MULTIVARIATE ANALYSIS
+# Combine multiple traits into a matrix and pass them as Y.
+
+# Create a multivariate trait matrix
+# First, convert all columns to numeric, handling any non-numeric values
+Y_multivariate <- as.matrix(traits_data)
+for (col in 1:ncol(Y_multivariate)) {
+  Y_multivariate[, col] <- as.numeric(as.character(Y_multivariate[, col]))
 }
 
-##### ANALYSIS COMPLETE
-cat("\n")
-cat(paste(rep("=", 50), collapse=""), "\n")
-cat("BICOSS ANALYSIS COMPLETED\n")
-cat(paste(rep("=", 50), collapse=""), "\n")
-cat("Results summary:\n")
-cat("- Processed", length(colnames(traits_data)), "traits\n")
-cat("- Successful results:", length(multivariate_results), "traits\n")
-cat("- Individual files: BICOSS_[trait]_significant_SNPs.txt\n")
-if (length(multivariate_results) > 0) {
-  cat("- Combined file: BICOSS_all_traits_significant_SNPs.txt\n")
+# Convert the entire matrix to numeric
+Y_multivariate <- matrix(as.numeric(Y_multivariate), nrow=nrow(Y_multivariate), ncol=ncol(Y_multivariate))
+colnames(Y_multivariate) <- colnames(traits_data)
+rownames(Y_multivariate) <- rownames(traits_data)
+
+# Check for any NA values that resulted from conversion
+na_count <- sum(is.na(Y_multivariate))
+if (na_count > 0) {
+  cat("Warning: Found", na_count, "NA values in the trait data after conversion.\n")
+  cat("These will be handled by the BICOSS function.\n")
 }
-cat("- Kinship matrix: kinship_matrix.txt\n")
-cat(paste(rep("=", 50), collapse=""), "\n")
+
+# Print summary of the multivariate trait matrix
+cat("Multivariate trait matrix dimensions:", dim(Y_multivariate), "\n")
+cat("Summary of trait values:\n")
+print(summary(Y_multivariate))
+
+# Handle NA values in multivariate analysis
+# Remove rows with any NA values for multivariate analysis
+complete_cases <- complete.cases(Y_multivariate)
+if (sum(complete_cases) < nrow(Y_multivariate)) {
+  cat("Removing", sum(!complete_cases), "samples with missing values for multivariate analysis.\n")
+  Y_multivariate_clean <- Y_multivariate[complete_cases, ]
+  geno_matrix_clean <- geno_matrix[complete_cases, ]
+  kinship_matrix_clean <- kinship_matrix[complete_cases, complete_cases]
+} else {
+  Y_multivariate_clean <- Y_multivariate
+  geno_matrix_clean <- geno_matrix
+  kinship_matrix_clean <- kinship_matrix
+}
+
+cat("Multivariate analysis with", nrow(Y_multivariate_clean), "samples and", ncol(Y_multivariate_clean), "traits.\n")
+
+# Debug: Print matrix dimensions
+cat("Matrix dimensions check:\n")
+cat("Y_multivariate_clean:", dim(Y_multivariate_clean), "\n")
+cat("geno_matrix_clean:", dim(geno_matrix_clean), "\n")
+cat("kinship_matrix_clean:", dim(kinship_matrix_clean), "\n")
+
+# Ensure all matrices have the same number of samples
+stopifnot(nrow(Y_multivariate_clean) == nrow(geno_matrix_clean))
+stopifnot(nrow(Y_multivariate_clean) == nrow(kinship_matrix_clean))
+stopifnot(ncol(kinship_matrix_clean) == nrow(kinship_matrix_clean))
+
+# Run BICOSS analysis for each trait separately and combine results
+cat("Running multivariate analysis by processing each trait separately...\n")
+
+multivariate_results <- list()
+
+for (trait_idx in 1:ncol(Y_multivariate_clean)) {
+  trait_name <- colnames(Y_multivariate_clean)[trait_idx]
+  cat("Processing trait", trait_idx, "of", ncol(Y_multivariate_clean), ":", trait_name, "\n")
+  
+  # Extract single trait
+  Y_single <- Y_multivariate_clean[, trait_idx, drop = FALSE]
+  
+  tryCatch({
+    BICOSS_result <- BICOSS(
+      Y = Y_single,
+      SNPs = geno_matrix_clean,
+      kinship = kinship_matrix_clean,
+      FDR_Nominal = 0.05,
+      P3D = FALSE,
+      maxiterations = 400,
+      runs_til_stop = 40
+    )
+    
+    multivariate_results[[trait_name]] <- BICOSS_result
+    cat("Completed trait:", trait_name, "\n")
+    
+  }, error = function(e) {
+    cat("Error processing trait", trait_name, ":", conditionMessage(e), "\n")
+    multivariate_results[[trait_name]] <- NULL
+  })
+}
+
+# Save combined multivariate results
+if (length(multivariate_results) > 0) {
+  cat("Saving multivariate analysis results...\n")
+  save(multivariate_results, file = "BICOSS_multivariate_results.RData")
+  cat("Multivariate analysis completed successfully.\n")
+} else {
+  cat("No multivariate results to save.\n")
+}
+
+

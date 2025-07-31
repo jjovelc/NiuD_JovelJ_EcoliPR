@@ -85,6 +85,40 @@ extract_vcf_info <- function(position, vcf_file) {
           }
         }
         
+        # Calculate percentage of isolates carrying the SNP from genotype data
+        # Get the genotype data (format field and sample data)
+        if (length(fields) >= 9) {
+          format_field <- fields[9]
+          sample_data <- fields[10:length(fields)]
+          
+          # Parse genotype data to count samples carrying the variant
+          samples_with_variant <- 0
+          total_samples <- 0
+          
+          for (sample in sample_data) {
+            if (sample != "." && sample != "./.") {
+              total_samples <- total_samples + 1
+              
+              # Extract genotype (first field before colon)
+              genotype <- strsplit(sample, ":")[[1]][1]
+              
+              # Check if sample carries the variant (genotype 1 or 2)
+              if (grepl("1", genotype) || grepl("2", genotype)) {
+                samples_with_variant <- samples_with_variant + 1
+              }
+            }
+          }
+          
+          # Calculate percentage
+          if (total_samples > 0) {
+            percentage_carrying <- (samples_with_variant / total_samples) * 100
+          } else {
+            percentage_carrying <- NA
+          }
+        } else {
+          percentage_carrying <- NA
+        }
+        
         return(list(
           position = pos,
           ref_allele = ref_allele,
@@ -92,7 +126,8 @@ extract_vcf_info <- function(position, vcf_file) {
           allele_freq = allele_freq,
           variant_type = variant_type,
           product_name = product_name,
-          protein_id = protein_id
+          protein_id = protein_id,
+          percentage_carrying = percentage_carrying
         ))
       }
     }
@@ -146,6 +181,7 @@ gff_file <- "NZ_HG941718.1_genes.gff"
 
 # Initialize the summary table
 summary_table <- data.frame(
+  Gene_name = character(0),
   Protein_Product = character(0),
   Protein_ID = character(0),
   Reference_Genome_Mutation_Site = character(0),
@@ -153,8 +189,6 @@ summary_table <- data.frame(
   SNP_Allele = character(0),
   Percentage_of_isolates_carrying_this_SNPs = character(0),
   Traits_Associated = character(0),
-  Effect_Size = character(0),
-  P_Value = character(0),
   stringsAsFactors = FALSE
 )
 
@@ -165,8 +199,6 @@ for (i in 1:nrow(significant_results)) {
   gene_name <- significant_results$Gene_Name[i]
   locus_tag <- significant_results$Locus_Tag[i]
   trait <- significant_results$Trait[i]
-  effect <- significant_results$Effect[i]
-  pvalue <- significant_results$P_Value[i]
   
   cat("Processing position", position, "for gene", gene_name, "\n")
   
@@ -178,14 +210,18 @@ for (i in 1:nrow(significant_results)) {
   
   if (!is.null(vcf_info)) {
     
+    # Include all variants regardless of frequency
+    # (Previously filtered out high-frequency variants > 50%)
+    cat("  Including variant with frequency:", round(vcf_info$percentage_carrying, 1), "%\n")
+    
     # Use gene name as product if no specific product found
     if (is.na(product_name) || product_name == "") {
       product_name <- gene_name
     }
     
     # Calculate percentage of isolates carrying the SNP
-    percentage <- if (!is.na(vcf_info$allele_freq)) {
-      paste0(round(vcf_info$allele_freq * 100, 1), "%")
+    percentage <- if (!is.na(vcf_info$percentage_carrying)) {
+      paste0(round(vcf_info$percentage_carrying, 1), "%")
     } else {
       "Unknown"
     }
@@ -196,6 +232,7 @@ for (i in 1:nrow(significant_results)) {
     
     # Add row to summary table
     summary_table <- rbind(summary_table, data.frame(
+      Gene_name = gene_name,
       Protein_Product = product_name,
       Protein_ID = ifelse(is.na(locus_tag), gene_name, locus_tag),
       Reference_Genome_Mutation_Site = vcf_info$position,
@@ -203,8 +240,6 @@ for (i in 1:nrow(significant_results)) {
       SNP_Allele = main_alt,
       Percentage_of_isolates_carrying_this_SNPs = percentage,
       Traits_Associated = trait,
-      Effect_Size = round(effect, 3),
-      P_Value = formatC(pvalue, format = "e", digits = 2),
       stringsAsFactors = FALSE
     ))
   }
@@ -216,24 +251,22 @@ cat("\n=== COMBINING TRAITS FOR SAME SNPs ===\n")
 final_table <- summary_table %>%
   group_by(Reference_Genome_Mutation_Site, Reference_Allele, SNP_Allele) %>%
   summarise(
+    Gene_name = first(Gene_name),
     Protein_Product = first(Protein_Product),
     Protein_ID = first(Protein_ID),
     Percentage_of_isolates_carrying_this_SNPs = first(Percentage_of_isolates_carrying_this_SNPs),
     Traits_Associated = paste(unique(Traits_Associated), collapse = ", "),
-    Effect_Size = paste(unique(Effect_Size), collapse = ", "),
-    P_Value = paste(unique(P_Value), collapse = ", "),
     .groups = 'drop'
   ) %>%
   select(
+    Gene_name,
     Protein_Product,
     Protein_ID, 
     Reference_Genome_Mutation_Site,
     Reference_Allele,
     SNP_Allele,
     Percentage_of_isolates_carrying_this_SNPs,
-    Traits_Associated,
-    Effect_Size,
-    P_Value
+    Traits_Associated
   ) %>%
   arrange(as.numeric(Reference_Genome_Mutation_Site))
 
@@ -255,15 +288,14 @@ cat("\n=== CREATING FORMATTED VERSION ===\n")
 # Create a nicely formatted version
 formatted_table <- final_table
 colnames(formatted_table) <- c(
+  "Gene Name",
   "Protein Product",
   "Protein ID", 
   "Reference Genome Mutation Site",
   "Reference Allele",
   "SNP Allele",
   "Percentage of isolates carrying this SNPs",
-  "Traits Associated",
-  "Effect Size",
-  "P-Value"
+  "Traits Associated"
 )
 
 # Save formatted version
@@ -276,10 +308,63 @@ write.csv(formatted_table, "Variant_Summary_Table.csv", row.names = FALSE)
 cat("Formatted table saved to: Variant_Summary_Table_Formatted.txt\n")
 cat("CSV version saved to: Variant_Summary_Table.csv\n")
 
+# Create markdown formatted table
+cat("\n=== CREATING MARKDOWN FORMATTED TABLE ===\n")
+
+# Function to create markdown table
+create_markdown_table <- function(df) {
+  # Create header
+  header <- paste("|", paste(colnames(df), collapse = " | "), "|")
+  
+  # Create separator
+  separator <- paste("|", paste(rep("---", ncol(df)), collapse = " | "), "|")
+  
+  # Create rows
+  rows <- apply(df, 1, function(row) {
+    paste("|", paste(row, collapse = " | "), "|")
+  })
+  
+  # Combine all parts
+  markdown_table <- c(header, separator, rows)
+  
+  return(markdown_table)
+}
+
+# Create markdown table
+markdown_table <- create_markdown_table(formatted_table)
+
+# Save markdown table to file
+writeLines(markdown_table, "Variant_Summary_Table_Markdown.md")
+
+cat("Markdown table saved to: Variant_Summary_Table_Markdown.md\n")
+
+# Print markdown table to console
+cat("\n=== MARKDOWN FORMATTED TABLE ===\n")
+cat(paste(markdown_table, collapse = "\n"))
+cat("\n")
+
 # Show statistics
 cat("\n=== TABLE STATISTICS ===\n")
 cat("Total variants included:", nrow(final_table), "\n")
-cat("Unique genes affected:", length(unique(final_table$Protein_Product)), "\n")
+cat("Unique genes affected:", length(unique(final_table$Gene_name)), "\n")
 cat("Unique traits involved:", length(unique(unlist(strsplit(final_table$Traits_Associated, ", ")))), "\n")
+
+# Show frequency distribution
+cat("\n=== FREQUENCY DISTRIBUTION ===\n")
+if (nrow(final_table) > 0) {
+  # Extract percentages and convert to numeric
+  percentages <- as.numeric(gsub("%", "", final_table$Percentage_of_isolates_carrying_this_SNPs))
+  percentages <- percentages[!is.na(percentages)]
+  
+  if (length(percentages) > 0) {
+    cat("Mean frequency:", round(mean(percentages), 1), "%\n")
+    cat("Median frequency:", round(median(percentages), 1), "%\n")
+    cat("Min frequency:", round(min(percentages), 1), "%\n")
+    cat("Max frequency:", round(max(percentages), 1), "%\n")
+    cat("Variants with frequency < 10%:", sum(percentages < 10), "\n")
+    cat("Variants with frequency 10-25%:", sum(percentages >= 10 & percentages <= 25), "\n")
+    cat("Variants with frequency > 25%:", sum(percentages > 25), "\n")
+  }
+}
 
 cat("\n=== VARIANT SUMMARY TABLE GENERATION COMPLETE ===\n")
