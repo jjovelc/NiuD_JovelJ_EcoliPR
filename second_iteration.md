@@ -158,11 +158,13 @@ Rscript plot_sign_SNPs.R
 
 ### Main results:
 
-#### Dotplot including significant associations:
-
-[Dotplot](data/second_iteration/SNP-trait-association-dotplot.pdf)
-
 #### Summary table including all significant SNPs
+
+<a href="data/second_iteration/Variant_Summary_Table.tsv" download>
+  <button style="padding: 6px 12px; font-size: 14px; border-radius: 6px; background-color: #007bff; color: white; border: none; cursor: pointer;">
+    ⬇️ Download SNP Table (.tsv)
+  </button>
+</a>
 
 | Gene_name | Protein_Product | Protein_ID | Reference_Genome_Mutation_Site | Reference_Allele | SNP_Allele | Percentage_of_isolates_carrying_this_SNPs | Traits_Associated |
 |-----------|-----------------|------------|--------------------------------|------------------|------------|-------------------------------------------|-------------------|
