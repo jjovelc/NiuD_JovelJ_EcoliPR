@@ -1,8 +1,9 @@
 library(data.table)
 
-# Parameters
-infile <- "snpdist.tsv"   # replace with your snp-dists output
-T <- 15                   # threshold SNPs
+setwd('/Users/juanjovel/Library/CloudStorage/OneDrive-UniversityofCalgary/jj/UofC/data_analysis/dongyanNiu/mawra/clustering_phylogenetics_human_Ecoli')
+
+T <- 15                               # threshold
+infile <- "snpdist_DIST.tsv"      # <-- set your filename
 
 # Read distance matrix
 dt <- fread(infile)

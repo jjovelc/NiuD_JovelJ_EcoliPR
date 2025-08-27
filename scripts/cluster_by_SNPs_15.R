@@ -8,7 +8,7 @@ library(igraph)
 setwd('/Users/juanjovel/Library/CloudStorage/OneDrive-UniversityofCalgary/jj/UofC/data_analysis/dongyanNiu/mawra/clustering_phylogenetics_human_Ecoli')
 
 T <- 15                               # threshold
-infile <- "snpdist_mycohort.tsv"      # <-- set your filename
+infile <- "snpdist_DIST.tsv      # <-- set your filename
 dt <- fread(infile)
 
 # Build numeric distance matrix
